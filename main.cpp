@@ -98,11 +98,14 @@ int main()
   std::cout.setf(std::ios::unitbuf);
   const long num_cpus = sysconf(_SC_NPROCESSORS_ONLN);
 
-  for (long i = 0; i < num_cpus; ++i)
-    for (long j = i + 1; j < num_cpus; ++j)
+  for (long i = 0; i < num_cpus; ++i) {
+    for (long j = 0; j < num_cpus; ++j) {
+      if (i == j) continue;
       nonius::global_benchmark_registry().emplace_back(
         "latency between CPU " + std::to_string(i) + " and " + std::to_string(j),
         LatencyBench(i, j));
+    }
+  }
 
   try
   {
