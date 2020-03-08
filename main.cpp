@@ -95,6 +95,7 @@ struct LatencyBench
 
 int main()
 {
+  std::cout.setf(std::ios::unitbuf);
   const long num_cpus = sysconf(_SC_NPROCESSORS_ONLN);
 
   for (long i = 0; i < num_cpus; ++i)
@@ -105,7 +106,10 @@ int main()
 
   try
   {
-    nonius::go(nonius::configuration{});
+    nonius::configuration conf = nonius::configuration{};
+    conf.summary = true;
+    conf.samples = 40;
+    nonius::go(conf);
     return 0;
   }
   catch (const std::exception& exc)

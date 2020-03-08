@@ -1,4 +1,4 @@
-CXXFLAGS=-std=c++11 -Wall -pthread -O3 -Iinclude
+CXXFLAGS=-std=c++11 -Wall -Wno-parentheses -pthread -O3
 
 SOURCES=main.cpp
 
