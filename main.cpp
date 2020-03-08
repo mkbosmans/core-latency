@@ -1,5 +1,4 @@
-#include <pthread.h>
-#include <unistd.h>
+#include <numa.h>
 
 #include <atomic>
 #include <exception>
@@ -11,6 +10,7 @@ enum State
 {
   Preparing,
   Ready,
+  Ready2,
   Ping,
   Pong,
   Finish,
@@ -45,10 +45,10 @@ private:
 
 static void set_affinity(unsigned int cpu_num)
 {
-  cpu_set_t cpuset;
-  CPU_ZERO(&cpuset);
-  CPU_SET(cpu_num, &cpuset);
-  pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
+  struct bitmask *cpumask = numa_allocate_cpumask();
+  numa_bitmask_setbit(cpumask, cpu_num);
+  numa_sched_setaffinity(0, cpumask);
+  numa_free_cpumask(cpumask);
 }
 
 struct LatencyBench
@@ -61,32 +61,48 @@ struct LatencyBench
 
   void operator()(nonius::chronometer meter) const
   {
-    Sync sync;
-
     set_affinity(first_cpu);
 
-    std::thread t([&] {
-      set_affinity(second_cpu);
-      sync.set(Ready);
+    numa_set_strict(1);
+    Sync *sync = (Sync*) numa_alloc_local(sizeof(Sync));
+    sync->set(Preparing);
 
-      State state = sync.wait_as_long_as(Ready);
+    set_affinity(first_cpu);
+    std::thread t1([&] {
+      set_affinity(first_cpu);
+      Sync *sync_ = sync;
+      sync_->wait_until(Ready);
+
+      meter.measure([&] {
+        sync_->set(Ping);
+        sync_->wait_until(Pong);
+      });
+
+      sync_->set(Finish);
+    });
+
+    set_affinity(second_cpu);
+    std::thread t2([&] {
+      set_affinity(second_cpu);
+      Sync *sync_ = sync;
+      sync_->wait_until(Ready2);
+      sync_->set(Ready);
+
+      State state = sync_->wait_as_long_as(Ready);
       while (state != Finish)
       {
         if (state == Ping)
-          sync.set(Pong);
-        state = sync.wait_as_long_as(Pong);
+          sync_->set(Pong);
+        state = sync_->wait_as_long_as(Pong);
       }
     });
 
-    sync.wait_until(Ready);
+    numa_sched_setaffinity(0, numa_all_cpus_ptr);
+    sync->set(Ready2);
+    t1.join();
+    t2.join();
 
-    meter.measure([&] {
-      sync.set(Ping);
-      sync.wait_until(Pong);
-    });
-
-    sync.set(Finish);
-    t.join();
+    numa_free(sync, sizeof(Sync));
   }
 
   const long first_cpu;
